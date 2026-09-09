@@ -26,7 +26,7 @@ def test_damping_monotonic():
 def test_period_in_range():
     import math
     for c in osc.CONFIGS:
-        t, z, v, a = osc.simulate(c, n=1000)
+        t, z, v, a = osc.simulate_mechanics(c, n=1000)
         # 找到 z 的前两个过零点 → 半周期
         zero_cross = []
         for i in range(1, len(z)):
@@ -42,13 +42,13 @@ def test_period_in_range():
 def test_peak_decreasing():
     peaks = []
     for c in osc.CONFIGS:
-        t, z, v, a = osc.simulate(c, n=2000)
+        t, z, v, a = osc.simulate_mechanics(c, n=2000)
         peaks.append(abs(z[0]))
     # 初始 z=0 因为 z(0)=0；第一个峰在 dt 后才有意义
     # 重新算：peak = max(|z|)
     peaks = []
     for c in osc.CONFIGS:
-        t, z, v, a = osc.simulate(c, n=2000)
+        t, z, v, a = osc.simulate_mechanics(c, n=2000)
         peaks.append(float(max(abs(z))))
     assert peaks[0] > peaks[1] > peaks[2], f"peak not decreasing: {peaks}"
 
@@ -56,7 +56,7 @@ def test_peak_decreasing():
 def test_decay_rate():
     """在 t=0.5 s 和 t=2.5 s 比较 |z|，衰减比应大致匹配 exp(-(t2-t1)/tau)"""
     for c in osc.CONFIGS:
-        t, z, v, a = osc.simulate(c, n=3000)
+        t, z, v, a = osc.simulate_mechanics(c, n=3000)
         # 找局部极大值
         import numpy as np
         z_np = z
@@ -75,10 +75,10 @@ def test_decay_rate():
 def test_oscilloscope_png():
     """跑 make_oscilloscope() 验证 PNG 写得出来"""
     import os
-    out = osc.RESULTS / "oscilloscope.png"
+    out = osc.RESULTS / "dashboard.png"
     if out.exists():
         out.unlink()
-    osc.make_oscilloscope(out)
+    osc.make_dashboard(out, {cfg: osc.simulate_full(cfg) for cfg in osc.CONFIGS})
     assert out.exists(), "PNG not written"
     assert out.stat().st_size > 50_000, "PNG too small"
 
@@ -87,8 +87,9 @@ def test_summary_txt():
     out = osc.RESULTS / "summary.txt"
     if out.exists():
         out.unlink()
-    summary = osc.make_oscilloscope(osc.RESULTS / "oscilloscope.png")
-    osc.write_summary(summary, out)
+    data = {cfg: osc.simulate_full(cfg) for cfg in osc.CONFIGS}
+    osc.make_dashboard(osc.RESULTS / "dashboard.png", data)
+    osc.write_summary(data, out)
     assert out.exists()
     content = out.read_text(encoding="utf-8")
     assert "empty" in content and "copper" in content and "coil" in content

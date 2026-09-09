@@ -67,7 +67,7 @@ Elmer 26.1 用 `<exepath>` 拼出相对路径去查找 `share\elmersolver`。
 * 磁铁 + 绕组之间 5 mm 间隙 — **对 3D ALE 偏小**，首次跑建议
   把绕组内半径改到 22 mm。
 
-## D. Elmer sif 关键字
+## D. Elmer sif 关键字·
 
 * `AV` 是 base Elmer 的标量关键字（1 分量），不是矢量形式。
 * `Magnetic Vector Potential` 是 MagnetoDynamics.dll 注册的 3 分量

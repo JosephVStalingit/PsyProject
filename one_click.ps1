@@ -64,6 +64,30 @@ function Warn($msg)    { Write-Host (C "1;33" " warn  ") -NoNewline; Write-Host 
 function Err($msg)     { Write-Host (C "1;31" "  err  ") -NoNewline; Write-Host " $msg" }
 
 # -----------------------------------------------------------------------
+#  Helper: launch an external program and return its real exit code.
+#  Bypasses PowerShell's tendency to treat stdout lines like
+#  '[debug] foo' as error records (RemoteException noise) when the
+#  output is piped through `& ... 2>&1 | Tee-Object`.
+# -----------------------------------------------------------------------
+function Run-Exe {
+    param(
+        [Parameter(Mandatory=$true)][string]$Exe,
+        [Parameter(Mandatory=$true)][string[]]$Args,
+        [string]$LogFile = $null
+    )
+    $quoted = foreach ($a in $Args) {
+        if ($a -match ' ') { '"' + $a + '"' } else { $a }
+    }
+    $proc = Start-Process -FilePath $Exe -ArgumentList ($quoted -join ' ') `
+        -NoNewWindow -PassThru -Wait
+    if ($LogFile) {
+        Set-Content -Path $LogFile -Value "Run-Exe: $Exe $($quoted -join ' ')\nexit=$($proc.ExitCode)" -Encoding UTF8
+    }
+    return $proc.ExitCode
+}
+
+
+# -----------------------------------------------------------------------
 #  0. locate / install gmsh via pip
 # -----------------------------------------------------------------------
 function Find-Gmsh {
@@ -164,8 +188,8 @@ foreach ($pkg in @('meshio','pyvista')) {
 # -----------------------------------------------------------------------
 Step 1 "gmsh build geometry + mesh  ->  model3d.msh"
 if (-not $PY_FOR_GMSH) { Err "no python available"; exit 1 }
-& $PY_FOR_GMSH solenoid3d.py 2>&1 | Tee-Object -FilePath results\gmsh.log
-if ($LASTEXITCODE -ne 0) { Err "gmsh build failed"; exit 1 }
+$rc = Run-Exe -Exe $PY_FOR_GMSH -Args @("solenoid3d.py") -LogFile "results\gmsh.log"
+if ($rc -ne 0) { Err "gmsh build failed (exit=$rc)"; exit 1 }
 Ok "model3d.msh  ($([math]::Round((Get-Item model3d.msh).Length/1KB,1)) kB)"
 
 # -----------------------------------------------------------------------
@@ -179,8 +203,8 @@ if (-not $elmergrid) {
 }
 if (-not $elmergrid) { Err "ElmerGrid not found in PATH or $ELMER_HOME\bin"; exit 1 }
 if (Test-Path mesh) { Remove-Item -Recurse -Force mesh }
-& $elmergrid 14 2 model3d.msh -out mesh -autoclean 2>&1 | Select-Object -First 5
-if ($LASTEXITCODE -ne 0) { Err "ElmerGrid failed"; exit 1 }
+$rc = Run-Exe -Exe (Join-Path $ELMER_HOME "bin\ElmerGrid.exe") -Args @("14","2","model3d.msh","-out","mesh","-autoclean")
+if ($rc -ne 0) { Err "ElmerGrid failed (exit=$rc)"; exit 1 }
 Ok "mesh/  ($((Get-ChildItem mesh\*.elements 2>$null).Count) element files)"
 
 # -----------------------------------------------------------------------
