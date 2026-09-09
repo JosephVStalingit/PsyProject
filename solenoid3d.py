@@ -1,165 +1,216 @@
 """
-solenoid3d.py  --  Build the falling-magnet mesh entirely from the
-                  gmsh Python API.  Produces model3d.msh (msh2) that
-                  ElmerGrid 14 can convert directly.
+solenoid3d.py  --  Build the spring-oscillator mesh.
 
-Why a Python script instead of .geo?
-    The .geo language has subtle syntax differences between gmsh 4.0 - 4.15,
-    especially around the `For ... In { ... }` loop over fragment outputs
-    and around `Physical Volume(N) += { ... }` cumulative syntax.  The
-    Python API is identical across all 4.x builds and far easier to debug.
+Usage (CLI):
+    python solenoid3d.py                       # default: --config no-coil
+    python solenoid3d.py --config no-coil
+    python solenoid3d.py --config copper-tube
+    python solenoid3d.py --config stranded-coil
 
-Usage:
-    python solenoid3d.py            # writes ./model3d.msh
-    python solenoid3d.py -o out.msh
+Three configurations differ only in Body 1 (the bore region):
+  no-coil       :  Body 1 = "AirInside"  (just empty air inside the bore)
+  copper-tube   :  Body 1 = "CopperTube"  (solid conductor)
+  stranded-coil :  Body 1 = "StrandedCoil" (geometry identical to
+                   copper-tube, but flagged as a stranded coil for
+                   Elmer circuit coupling)
 
-Body ids (kept identical to case.sif):
-    1 = stranded coil hollow cylinder
-    2 = permanent magnet
-    3 = surrounding air
-    1001 = magnetic-infinity boundary (outer air surface)
+Geometry layout (units in metres):
+
+  Z = +0.101  AnchorPlate      fixed point (clamped at top face)
+  Z = +0.099  Spring top
+  Z = +0.092  Spring bottom    spring: thin elastic cylinder (Body 4)
+  Z = +0.090 +---------------+  magnet top
+              |    Magnet    |  Body 2, R=15mm, H=30mm
+  Z = +0.060  magnet bottom
+  Z =  0.000 +---------------+  coil/bore region top
+              |    Body 1    |  depends on --config
+  Z = -0.040  coil/bore region bottom
+  Z = -0.080  AirDomain bottom
 """
-
 from __future__ import annotations
 import argparse
-import math
 import sys
 import gmsh
 
 
-def build(out_path: str) -> None:
-    import traceback
-    try:
-        _build(out_path)
-    except Exception:
-        traceback.print_exc()
-        raise
+# ---- Dimensions (m) ----
+R_MAG    = 0.015
+MAG_Z0   = 0.060
+MAG_Z1   = 0.090
+R_AIR    = 0.080
+AIR_Z0   = -0.080
+AIR_Z1   = +0.110
+S_OUT    = 0.025
+S_IN     = 0.020
+S_Z0     = 0.000
+S_Z1     = 0.040
+SPR_R_OUT = 0.008
+SPR_R_IN  = 0.006
+SPR_Z0   = 0.092
+SPR_Z1   = 0.099
+ANCH_Z0  = 0.099
+ANCH_Z1  = 0.101
 
-def _build(out_path: str) -> None:
+
+def cyl(r, z0, z1):
+    return gmsh.model.occ.addCylinder(0, 0, z0, 0, 0, z1 - z0, r)
+
+
+def parse_args():
+    ap = argparse.ArgumentParser()
+    ap.add_argument('-o', '--out', default='model3d.msh')
+    ap.add_argument('--config',
+                    choices=['no-coil', 'copper-tube', 'stranded-coil'],
+                    default='no-coil')
+    return ap.parse_args()
+
+def build(out_path: str, config: str) -> None:
     gmsh.initialize()
-    gmsh.option.setNumber("General.Terminal", 1)
-    gmsh.option.setNumber("General.ExpertMode", 1)
-    gmsh.model.add("falling_magnet")
+    gmsh.option.setNumber('General.Terminal', 1)
+    gmsh.option.setNumber('General.ExpertMode', 1)
+    gmsh.model.add('spring_oscillator')
 
-    # ----- global mesh size --------------------------------------------
-    gmsh.option.setNumber("Mesh.CharacteristicLengthMin", 0.0012)
-    gmsh.option.setNumber("Mesh.CharacteristicLengthMax", 0.004)
+    gmsh.option.setNumber('Mesh.CharacteristicLengthMin', 0.0012)
+    gmsh.option.setNumber('Mesh.CharacteristicLengthMax', 0.004)
 
-    # ----- dimensions -------------------------------------------------
-    s_out, s_in = 0.025, 0.020
-    s_lo, s_hi  = -0.02, 0.02
-    m_r         = 0.015
-    m_lo, m_hi  = 0.06, 0.09
-    a_r         = 0.08
-    a_lo, a_hi  = -0.05, 0.12
+    # ---- primitives ----
+    air       = cyl(R_AIR,  AIR_Z0,  AIR_Z1)
+    coil_out  = cyl(S_OUT,  S_Z0,   S_Z1)
+    coil_in   = cyl(S_IN,   S_Z0,   S_Z1)
+    mag       = cyl(R_MAG,  MAG_Z0, MAG_Z1)
+    spr_out   = cyl(SPR_R_OUT, SPR_Z0, SPR_Z1)
+    spr_in    = cyl(SPR_R_IN,  SPR_Z0, SPR_Z1)
+    # anchor uses its own radius (smaller than air) to avoid Boolean
+    # ambiguity when fragmenting.
+    anch      = cyl(0.030, ANCH_Z0, ANCH_Z1)
+    print(f'[debug] cyl tags: air={air}, coil_out={coil_out}, coil_in={coil_in}, '
+          f'mag={mag}, spr_out={spr_out}, spr_in={spr_in}, anch={anch}',
+          file=sys.stderr)
 
-    # ----- helper to make a vertical cylinder of radius r, z in [zlo, zhi]
-    def cyl(r, zlo, zhi):
-        return gmsh.model.occ.addCylinder(0, 0, zlo, 0, 0, zhi - zlo, r)
+    # ---- bore volume (Body 1) per config ----
+    if config == 'no-coil':
+        bore_tag    = air
+        bore_name   = 'AirInside'
+    else:                       # copper-tube or stranded-coil
+        bore, _ = gmsh.model.occ.cut(
+            [(3, coil_out)], [(3, coil_in)],
+            removeObject=True, removeTool=True)
+        bore_tag  = bore[0][1]
+        bore_name = 'CopperTube' if config == 'copper-tube' else 'StrandedCoil'
 
-    air       = cyl(a_r,   a_lo, a_hi)
-    coil_out  = cyl(s_out, s_lo, s_hi)
-    coil_in   = cyl(s_in,  s_lo, s_hi)
-    magnet    = cyl(m_r,   m_lo, m_hi)
+    # ---- spring (hollow cylinder) ----
+    spring, _ = gmsh.model.occ.cut(
+        [(3, spr_out)], [(3, spr_in)],
+        removeObject=True, removeTool=True)
+    spring_tag = spring[0][1]
 
-    # ----- 1. fragment FIRST: this splits the air cylinder along the
-    #          coil + magnet, giving every region its own volume tag.
+    # ---- fragment everything ----
+    # For 'no-coil' we use the air cylinder as the bore; for the
+    # other two configs the bore is a separate volume that overlaps
+    # the air, so we pass it as well.  Skip duplicates.
+    fragment_input = []
+    seen = set()
+    for v in (air, bore_tag, mag, spring_tag, anch):
+        if v not in seen:
+            fragment_input.append((3, v))
+            seen.add(v)
     fragments, _ = gmsh.model.occ.fragment(
-        [(3, air), (3, coil_out), (3, coil_in), (3, magnet)],
-        [],
-        removeObject=True, removeTool=True)
-
-    # ----- 2. cut the inner drill out of the coil-shell volumes -------
-    #          (must come after fragment so tool is the correct region)
-    fragments2, _ = gmsh.model.occ.cut(
-        [d for d in fragments if d[0] == 3],
-        [(3, coil_in)],
-        removeObject=True, removeTool=True)
-
+        fragment_input, [], removeObject=True, removeTool=True)
     gmsh.model.occ.synchronize()
+    # Re-query surviving volume tags AFTER synchronize (gmsh renumbers them)
+    all_dim_tags = gmsh.model.getEntities(dim=3)
 
-    # ----- 3. classify: walk every surviving volume -------------------
-    #          Use the cylinder-equivalent radius (max of |x|,|y| of the
-    #          bounding box) instead of the box-corner diagonal.
-    coil_tags, mag_tags, air_tags = [], [], []
-    for dim, tag in fragments2:
+    # ---- classify by bounding box ----
+    coil_vols, mag_vols, spring_vols, anch_vols, air_vols = [], [], [], [], []
+
+    for dim, tag in all_dim_tags:
         if dim != 3:
             continue
-        bbox = gmsh.model.getBoundingBox(dim, tag)   # (xmin, ymin, zmin,
-        xmin, ymin, zmin, xmax, ymax, zmax = bbox    #  xmax, ymax, zmax)
+        bbox = gmsh.model.getBoundingBox(dim, tag)
+        xmin, ymin, zmin, xmax, ymax, zmax = bbox
         rmax = max(abs(xmin), abs(xmax), abs(ymin), abs(ymax))
-        if (zmax <= s_hi + 1e-6 and zmin >= s_lo - 1e-6
-                and rmax > s_in - 1e-6 and rmax <= s_out + 1e-6):
-            coil_tags.append(tag)
-        elif (zmax <= m_hi + 1e-6 and zmin >= m_lo - 1e-6
-              and rmax <= m_r + 1e-6):
-            mag_tags.append(tag)
+
+        if zmax > ANCH_Z0 - 1e-4 and zmin > ANCH_Z0 - 1e-4 and rmax > S_OUT:
+            anch_vols.append(tag)
+        elif (SPR_R_IN - 1e-4 < rmax < SPR_R_OUT + 1e-4
+              and SPR_Z0 - 1e-4 < zmin and zmax < SPR_Z1 + 1e-4):
+            spring_vols.append(tag)
+        elif (rmax < R_MAG + 1e-4 and MAG_Z0 - 1e-4 < zmin
+              and zmax < MAG_Z1 + 1e-4):
+            mag_vols.append(tag)
+        elif (S_Z0 - 1e-4 < zmin and zmax < S_Z1 + 1e-4
+              and rmax < S_OUT + 1e-4):
+            coil_vols.append(tag)
         else:
-            air_tags.append(tag)
+            air_vols.append(tag)
 
-    # ----- 4. per-volume mesh size ------------------------------------
-    # coil + air interior 0.0012 (refined), outer air + magnet 0.004.
-    def size(tag, lc):
-        gmsh.model.mesh.setSize(
-            gmsh.model.getBoundary([(3, tag)], combined=False, oriented=False),
-            lc)
+    assert coil_vols, f'no coil/air-bore volumes for {config}'
+    assert mag_vols,  'no magnet volumes classified'
+    assert spring_vols, 'no spring volumes classified'
+    assert anch_vols, 'no anchor-plate volumes classified'
 
-    for t in coil_tags:
-        size(t, 0.0012)
-    for t in mag_tags + air_tags:
-        size(t, 0.004)
+    # ---- physical groups ----
+    gmsh.model.addPhysicalGroup(3, coil_vols,  tag=1, name=bore_name)
+    gmsh.model.addPhysicalGroup(3, mag_vols,   tag=2, name='Magnet')
+    gmsh.model.addPhysicalGroup(3, air_vols,   tag=3, name='Air')
+    gmsh.model.addPhysicalGroup(3, spring_vols, tag=4, name='Spring')
+    gmsh.model.addPhysicalGroup(3, anch_vols,  tag=5, name='Anchor')
 
-    # ----- 5. physical groups ------------------------------------------
-    # NB: setPhysicalName is purely cosmetic; the integer IDs (1,2,3) are
-    # what Elmer reads from the .msh file.
-    gmsh.model.addPhysicalGroup(3, coil_tags, tag=1, name="CoilBlock")
-    gmsh.model.addPhysicalGroup(3, mag_tags,  tag=2, name="Magnet")
-    gmsh.model.addPhysicalGroup(3, air_tags,  tag=3, name="AirDomain")
-
-    # ----- 6. outer air boundary = magnetic-infinity surface -----------
-    outer_surfs = []
-    for t in air_tags:
-        bnd = gmsh.model.getBoundary([(3, t)],
-                                    combined=False, oriented=False)
-        for dim, tag in bnd:
+    # ---- boundaries ----
+    outer = []
+    for t in air_vols:
+        for dim, tag in gmsh.model.getBoundary([(3, t)], combined=False, oriented=False):
             if dim != 2:
                 continue
-            bbox = gmsh.model.getBoundingBox(2, tag)
-            _, _, zmin, _, _, zmax = bbox
-            # the lateral surface spans the full air z range
-            if zmin < a_lo + 1e-6 and zmax > a_hi - 1e-6:
-                outer_surfs.append(tag)
-    # only the *lateral* surface of the outermost air ring belongs to the
-    # magnetic-infinity boundary; bottom / top caps are not.
-    gmsh.model.addPhysicalGroup(2, outer_surfs, tag=1001,
-                                name="MagneticInfinity")
+            bb = gmsh.model.getBoundingBox(2, tag)
+            if bb[2] < AIR_Z0 + 1e-4 and bb[5] > AIR_Z1 - 1e-4:
+                outer.append(tag)
+    gmsh.model.addPhysicalGroup(2, outer, tag=1001, name='MagneticInfinity')
 
-    # ----- 7. msh2 output --------------------------------------------
-    gmsh.option.setNumber("Mesh.MshFileVersion", 2.2)
-    gmsh.option.setNumber("Mesh.Format", 1)   # ASCII
+    anch_top = []
+    for t in anch_vols:
+        for dim, tag in gmsh.model.getBoundary([(3, t)], combined=False, oriented=False):
+            if dim != 2:
+                continue
+            bb = gmsh.model.getBoundingBox(2, tag)
+            if bb[5] > ANCH_Z1 - 1e-4:
+                anch_top.append(tag)
+    gmsh.model.addPhysicalGroup(2, anch_top, tag=1002, name='AnchorFixed')
 
+    # ---- per-volume mesh size ----
+    def size(tags, lc):
+        for t in tags:
+            gmsh.model.mesh.setSize(
+                gmsh.model.getBoundary([(3, t)], combined=False, oriented=False), lc)
+    size(coil_vols + spring_vols, 0.0012)
+    size(mag_vols + air_vols + anch_vols, 0.004)
+
+    # ---- write ----
+    gmsh.option.setNumber('Mesh.MshFileVersion', 2.2)
+    gmsh.option.setNumber('Mesh.Format', 1)
     gmsh.model.mesh.generate(3)
     gmsh.write(out_path)
     gmsh.finalize()
 
-    # ----- 8. summary ------------------------------------------------
-    print(f"[ok] wrote {out_path}")
-    print(f"     coil volumes: {len(coil_tags)}")
-    print(f"     magnet vols : {len(mag_tags)}")
-    print(f"     air vols    : {len(air_tags)}")
-    print(f"     outer surface tags: {sorted(outer_surfs)[:5]}{' ...' if len(outer_surfs) > 5 else ''}")
+    print(f'[ok] wrote {out_path}')
+    print(f'     config        : {config}')
+    print(f'     coil-bore vols: {len(coil_vols)} ({bore_name})')
+    print(f'     magnet vols   : {len(mag_vols)}')
+    print(f'     spring vols   : {len(spring_vols)}')
+    print(f'     anchor vols   : {len(anch_vols)}')
+    print(f'     air vols      : {len(air_vols)}')
+    print(f'     outer surface : {len(outer)} faces')
+    print(f'     anchor top    : {len(anch_top)} faces')
 
 
 def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("-o", "--out", default="model3d.msh")
-    args = ap.parse_args()
+    args = parse_args()
     try:
-        build(args.out)
+        build(args.out, args.config)
     except Exception as exc:
-        print(f"[err] {exc}", file=sys.stderr)
+        print(f'[err] {exc}', file=sys.stderr)
         sys.exit(1)
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()

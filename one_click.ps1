@@ -1,25 +1,25 @@
 # ============================================================================
-#  one_click.ps1  --  end-to-end pipeline (geometry -> results -> viewer)
+#  one_click.ps1  --  端到端流水线（几何 → 结果 → 可视化）
 #
-#  KNOWN ISSUE (Elmer 26.1 on Windows):
-#      ElmerSolver.exe loads its procedure DLLs (MagnetoDynamics.dll etc.)
-#      from "<exe-dir>\share\elmersolver\lib\".  ELMER_HOME / ELMER_LIB
-#      env vars do NOT influence the load path.  When the binary is invoked
-#      from a directory other than the install root, the load fails with
-#      "Can't find procedure [MagnetoDynamics]".  This is worked around
-#      in step 3 by running the binary with -WorkingDirectory = ELMER_HOME,
-#      but the load is still flaky on some Windows builds.
-#      If step 3 fails, run ElmerSolver.exe manually from
-#      "D:\Program Files\Elmer 26.1-Release" with the absolute sif path.
+#  已知问题（Elmer 26.1 / Windows）：
+#      ElmerSolver.exe 从 "<exe-dir>\share\elmersolver\lib\" 加载 procedure
+#      DLL。ELMER_HOME / ELMER_LIB 环境变量不影响加载路径。当二进制从
+#      安装根以外的目录启动时，加载失败，报
+#      "Can't find procedure [MagnetoDynamics]"。本脚本第 3 步通过
+#      -WorkingDirectory = ELMER_HOME 启动二进制来绕过此问题，
+#      但在某些 Windows 版本上仍然不稳定。
+#      若步骤 3 失败，请在 cmd.exe 中切换到
+#      "D:\Program Files\Elmer 26.1-Release" 后用绝对路径手动跑
+#      ElmerSolver.exe。
 #
-#  Steps:
-#     0. locate / pip-install gmsh
-#     0b. ensure meshio + pyvista on the gmsh interpreter
-#     1. python solenoid3d.py  ->  model3d.msh
-#     2. ElmerGrid 14 2        ->  mesh/  (Elmer internal format)
-#     3. ElmerSolver case_simple.sif  ->  results/*.vtu
-#     4. summary
-#     5. launch FreeCAD + the results-viewer macro (if FreeCAD installed)
+#  步骤：
+#     0.  定位或 pip 安装 gmsh
+#     0b. 在 gmsh 解释器上确保 meshio + pyvista
+#     1.  python solenoid3d.py  ->  model3d.msh
+#     2.  ElmerGrid 14 2        ->  mesh/（Elmer 内部格式）
+#     3.  ElmerSolver case_simple.sif  ->  results/*.vtu
+#     4.  总结
+#     5.  启动 FreeCAD + 结果查看宏（如果已装 FreeCAD）
 # ============================================================================
 $ErrorActionPreference = "Stop"
 Set-Location -Path $PSScriptRoot
