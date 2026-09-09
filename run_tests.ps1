@@ -32,7 +32,7 @@ if (-not (Test-Path model3d.msh)) {
     Write-Host "  err  model3d.msh not produced" -ForegroundColor Red
     exit 1
 }
-Write-Host ("  ok   model3d.msh  ({0:N1} MB)" -f (Get-Item model3d.msh).Length/1MB) -ForegroundColor Green
+Write-Host ("  ok   model3d.msh  ({0:N1} MB)" -f ([double](Get-Item model3d.msh).Length/1MB)) -ForegroundColor Green
 
 # 2. Convert mesh (ElmerGrid)
 Write-Host ""
@@ -47,7 +47,7 @@ Write-Host ("  ok   mesh\  ({0} element files)" -f (Get-ChildItem mesh\*.element
 
 # 3. Run the FEM sanity tests
 Write-Host ""
-Write-Host "[3/3] FEM tests" -ForegroundColor Cyan
+Write-Host "[3/4] FEM tests" -ForegroundColor Cyan
 New-Item -ItemType Directory -Force test_outputs | Out-Null
 & $PY tests/test_mesh.py
 if ($LASTEXITCODE -ne 0) {
@@ -60,8 +60,20 @@ if ($LASTEXITCODE -ne 0) {
     exit 1
 }
 
+# 4. Oscilloscope tests (spring-magnet damping 3-config)
+Write-Host ""
+Write-Host "[4/4] Oscilloscope tests" -ForegroundColor Cyan
+& $PY -c "import sys; sys.path.insert(0, '.'); from tests.test_oscilloscope import test_damping_monotonic, test_period_in_range, test_peak_decreasing, test_decay_rate, test_oscilloscope_png, test_summary_txt; test_damping_monotonic(); test_period_in_range(); test_peak_decreasing(); test_decay_rate(); test_oscilloscope_png(); test_summary_txt(); print('all oscilloscope tests passed')"
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "  err  test_oscilloscope.py failed" -ForegroundColor Red
+    exit 1
+}
+
 Write-Host ""
 Write-Host "  ok   all FEM tests passed" -ForegroundColor Green
 Write-Host ""
 Write-Host "Outputs in test_outputs/:" -ForegroundColor Cyan
 Get-ChildItem test_outputs | Format-Table Name, Length -AutoSize
+Write-Host ""
+Write-Host "Outputs in results/:" -ForegroundColor Cyan
+Get-ChildItem results -ErrorAction SilentlyContinue | Format-Table Name, Length -AutoSize
