@@ -1,0 +1,148 @@
+# -*- coding: utf-8 -*-
+"""
+results_viewer.FCMacro  -  drop-in FreeCAD 1.1.x macro
+========================================================
+Loaded automatically by one_click.ps1 once ElmerSolver has finished.
+Reads:
+    model3d.msh        (from gmsh)
+    results/magnet_t*.vtu  (from ElmerSolver)
+Builds the geometry + a sliding-window point-cloud animation
+WITHOUT loading all 220 transient frames into memory at once.
+
+Compatibility: FreeCAD 0.20 .. 1.1.x (uses Mesh + PySide2)
+"""
+
+import os
+import glob
+import FreeCAD
+import FreeCADGui
+import Mesh
+
+# ----- robust Qt import -------------------------------------------------
+try:
+    from PySide2 import QtCore, QtWidgets
+except ImportError:
+    try:
+        from PySide import QtCore, QtWidgets
+    except ImportError:
+        QtCore = QtWidgets = None
+
+# ----- config -----------------------------------------------------------
+ROOT      = r"c:\Users\JosephVStalin\Desktop\PysProject"
+MSH       = os.path.join(ROOT, "model3d.msh")
+VTU_GLOB  = os.path.join(ROOT, "results", "*.vtu")
+FRAME_DT  = 0.10
+WINDOW    = 6
+
+# ----- 1. document + view -----------------------------------------------
+doc = FreeCAD.newDocument("FallingMagnet_Results")
+FreeCADGui.activeDocument().activeView().viewIsometric()
+
+# ----- 2. geometry mesh -------------------------------------------------
+if os.path.isfile(MSH):
+    geo_obj = doc.addObject("Mesh::Feature", "GeometryMesh")
+    geo_obj.Mesh = Mesh.Mesh(MSH)
+    geo_obj.ViewObject.DisplayMode = "Flat Lines"
+    geo_obj.ViewObject.LineColor   = (0.50, 0.50, 0.50)
+    geo_obj.ViewObject.Transparency = 80
+    FreeCAD.Console.PrintMessage("[ok] {}\n".format(MSH))
+else:
+    FreeCAD.Console.PrintError("[err] {} not found\n".format(MSH))
+
+# ----- 3. result frames -------------------------------------------------
+vtu_files = sorted(glob.glob(VTU_GLOB))
+n = len(vtu_files)
+FreeCAD.Console.PrintMessage("[info] {} result frames\n".format(n))
+
+STATE = {"i": 0}
+
+def _frame_name(k):
+    return "frame_{:04d}".format(k)
+
+def _load_frame(k):
+    if k < 0 or k >= n:
+        return None
+    obj = doc.getObject(_frame_name(k))
+    if obj is not None:
+        return obj
+    vtu = vtu_files[k]
+    try:
+        m = Mesh.Mesh(vtu)
+    except Exception as exc:                       # noqa: BLE001
+        FreeCAD.Console.PrintWarning("[warn] {}: {}\n".format(vtu, exc))
+        try:
+            import meshio
+            stl = os.path.join(os.path.dirname(vtu),
+                               "_{}.stl".format(os.path.splitext(os.path.basename(vtu))[0]))
+            meshio.write(stl, meshio.read(vtu))
+            m = Mesh.Mesh(stl)
+        except Exception as exc2:                   # noqa: BLE001
+            FreeCAD.Console.PrintError("[err] {}: {}\n".format(vtu, exc2))
+            return None
+    obj = doc.addObject("Mesh::Feature", _frame_name(k))
+    obj.Mesh = m
+    obj.ViewObject.DisplayMode = "Points"
+    obj.ViewObject.PointColor  = (0.10, 0.40, 1.00)
+    obj.ViewObject.PointSize   = 2.0
+    obj.ViewObject.Visibility  = False
+    return obj
+
+def _show_window(idx):
+    if n == 0:
+        return
+    half = WINDOW // 2
+    lo   = max(0, idx - half)
+    hi   = min(n, lo + WINDOW)
+    lo   = max(0, hi - WINDOW)
+    for k in range(lo, hi):
+        _load_frame(k)
+        o = doc.getObject(_frame_name(k))
+        if o:
+            o.ViewObject.Visibility = (k == idx)
+    STATE["i"] = idx
+    doc.recompute()
+
+if n:
+    _show_window(0)
+    FreeCADGui.SendMsgToActiveView("ViewFit")
+
+# ----- 4. timer + scrub panel -------------------------------------------
+if QtCore is not None and n > 0:
+    timer = QtCore.QTimer()
+    timer.setInterval(int(FRAME_DT * 1000))
+
+    def _tick():
+        _show_window((STATE["i"] + 1) % n)
+    timer.timeout.connect(_tick)
+    timer.start()
+
+    panel = QtWidgets.QWidget()
+    panel.setWindowTitle("Falling-Magnet Frames ({})".format(n))
+    vbox = QtWidgets.QVBoxLayout(panel)
+    slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
+    slider.setRange(0, n - 1)
+    vbox.addWidget(QtWidgets.QLabel("Step 0 .. {}".format(n - 1)))
+    vbox.addWidget(slider)
+    btn_row = QtWidgets.QHBoxLayout()
+    play = QtWidgets.QPushButton("Pause")
+    play.setCheckable(True)
+    btn_row.addWidget(play)
+    btn_row.addWidget(QtWidgets.QLabel("dt {:.0f} ms".format(FRAME_DT * 1000)))
+    vbox.addLayout(btn_row)
+
+    slider.valueChanged.connect(_show_window)
+
+    def _toggle(checked):
+        if checked:
+            timer.stop(); play.setText("Play")
+        else:
+            timer.start(); play.setText("Pause")
+    play.toggled.connect(_toggle)
+
+    FreeCADGui.Control.showDialog(panel)
+    FreeCAD.Console.PrintMessage(
+        "[ok] animation running; close dialog to keep current frame.\n")
+else:
+    FreeCAD.Console.PrintMessage("[info] no Qt or no frames - static view only.\n")
+
+FreeCAD.Console.PrintMessage("[done] FallingMagnet_Results ready.\n")

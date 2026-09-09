@@ -1,0 +1,38 @@
+# pip packages for the Falling-Magnet Elmer/FEM project.
+#
+# Install all in one shot:
+#     pip install -r requirements.txt
+#
+# Tested with Python 3.11 on Windows 10 / 11 in Sep 2026.
+# Versions are pinned loosely so pip will pick the latest compatible
+# release on a fresh machine while still tracking major versions.
+
+# Geometry & mesh generation
+#   gmsh 4.x ships its CLI as a tiny Python wrapper around gmsh-4.x.dll
+#   (or the platform equivalent).  This is the only Python binding we
+#   need - no separate .exe installer.
+gmsh>=4.13,<5.0
+
+# I/O
+#   meshio reads .msh / .vtu and writes them to / from numpy.
+meshio>=5.3,<6.0
+
+# Headless 3D visualisation (no GUI required)
+#   pyvista bundles its own VTK wheels; if the install fails on
+#   Python 3.14 try `pip install pyvista --no-deps` then install
+#   vtk from the PyPI wheel that matches your Python tag.
+pyvista>=0.43,<1.0
+
+# Numerical backbone
+numpy>=2.0,<3.0
+matplotlib>=3.8
+
+# ---------------------------------------------------------------------------
+# Optional but recommended
+# ---------------------------------------------------------------------------
+
+# ffmpeg-python only needed if you want to compose MP4 from PNG frames
+#   pip install imageio[ffmpeg]
+# is a lighter alternative - the default ffmpeg-python requirement is the
+# external ffmpeg binary which Windows users typically obtain from
+# https://www.gyan.dev/ffmpeg/builds/ .

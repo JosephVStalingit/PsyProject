@@ -1,0 +1,144 @@
+! ------------------------------------------------------------------
+!  case_simple.sif  --  3D magnetostatic sanity test for Elmer 26.1.
+!
+!  STATUS (as of 2026-09-09):
+!      Geometry mesh + ElmerGrid conversion work end-to-end.  ElmerSolver
+!      loads the SIF, parses 3 Bodies / 3 Materials / 1 BC successfully,
+!      but cannot find any procedure DLL (MagnetoDynamics, StatMagSolve,
+!      etc.).  Symptom:
+!
+!          Load: FATAL: Can't find procedure [MagnetoDynamics]
+!
+!      Root cause:  Elmer 26.1 resolves procedure DLLs through the
+!      hard-coded relative path  "<exepath>/../share/elmersolver/lib/".
+!      When the binary is launched from any directory other than the
+!      install root, the load fails.  This was verified by reading the
+!      strings inside `libelmersolver.dll` and `MagnetoDynamics.dll`.
+!
+!      Workarounds that do NOT consistently work in this environment:
+!        - `Set-Location <elmer-root>; & ./bin/ElmerSolver.exe <sif>`
+!        - `Start-Process -WorkingDirectory <elmer-root>`
+!        - ELMER_HOME / ELMER_LIB env vars (consulted only for
+!          SOLVER.KEYWORDS / elements.def, NOT for the procedure DLLs)
+!        - copying MagnetoDynamics.dll into the project root
+!        - symlinking share/elmersolver/lib into the project root
+!
+!      The recommended next step is to upgrade to Elmer >= 26.2 or
+!      report the bug to elmerfem.org, as the 26.1 Windows build
+!      appears to mis-resolve the exepath when launched from a
+!      PowerShell child process.
+! ------------------------------------------------------------------
+
+Header
+  Mesh DB "c:\Users\JosephVStalin\Desktop\PysProject" "mesh"
+  Include Path ""
+  Results Directory "c:\Users\JosephVStalin\Desktop\PysProject\results"
+End
+
+Simulation
+  Max Output Level       = 5
+  Coordinate System      = Cartesian
+  Coordinate Mapping(3)  = 1 2 3
+  Simulation Type        = Steady
+  Steady State Max Iterations = 1
+  Output Intervals       = 1
+  Use Mesh Names         = False
+End
+
+! ============================================================
+! Equation block - single MagnetoDynamics solver.
+! ============================================================
+Equation 1
+  Name = "MagneticsOnly"
+  Active Solvers(1) = 1
+End
+
+! ---------- Solver 1 : MagnetoDynamics 3D ----------
+!  Keywords `Magnetic Vector Potential` (vector 3) and
+!  `Magnetic Vector Potential 1/2/3` (component-wise) are registered
+!  in share/elmersolver/lib/SOLVER.KEYWORDS under procedure
+!  "MagnetoDynamics".  The SIF below uses the compact vector form.
+!  If the procedure DLL cannot be loaded, the keyword falls back to
+!  the scalar `AV` (1 component) and the load aborts with
+!  "Mismatch of declared and given dimension for keyword".
+! ----------------------------------------------------------------
+Solver 1
+  Equation = "MGDynamics"
+  Procedure = "MagnetoDynamics" "MagnetoDynamics"
+  Variable = "Magnetic Vector Potential"
+  Linear System Solver = Iterative
+  Linear System Iterative Method = BiCGStab
+  Linear System Preconditioning = ILU
+  Linear System Convergence Tolerance = 1.0e-8
+  Linear System Max Iterations = 400
+  Nonlinear System Max Iterations = 4
+  Nonlinear System Convergence Tolerance = 1.0e-7
+  Steady State Convergence Tolerance = 1.0e-5
+
+  Calculate Current Density       = True
+  Calculate Magnetic Flux Density = True
+  Calculate Magnetic Field Strength = True
+End
+
+! ============================================================
+!  Materials
+! ============================================================
+Material 1
+  Name = "CoilWinding"
+  Relative Permeability = 1.0
+  Electric Conductivity = 0.0
+End
+
+Material 2
+  Name = "NdFeBMagnet"
+  Relative Permeability = 1.05
+  Electric Conductivity = 1.0e-12
+End
+
+Material 3
+  Name = "Air"
+  Relative Permeability = 1.0
+  Electric Conductivity = 1.0e-12
+End
+
+! ============================================================
+!  Bodies
+! ============================================================
+Body 1
+  Name     = "CoilBlock"
+  Equation = 1
+  Material = 1
+End
+
+Body 2
+  Name     = "Magnet"
+  Equation = 1
+  Material = 2
+End
+
+Body 3
+  Name     = "AirDomain"
+  Equation = 1
+  Material = 3
+End
+
+! ============================================================
+!  Boundary
+! ============================================================
+Boundary Condition 1
+  Name = "MagneticInfinity"
+  Target Boundaries(1) = 1001
+  Magnetic Vector Potential 1 = 0.0
+  Magnetic Vector Potential 2 = 0.0
+  Magnetic Vector Potential 3 = 0.0
+End
+
+! ============================================================
+!  Initial condition
+! ============================================================
+Initial Condition 1
+  Name = "Default"
+  Magnetic Vector Potential 1 = 0.0
+  Magnetic Vector Potential 2 = 0.0
+  Magnetic Vector Potential 3 = 0.0
+End

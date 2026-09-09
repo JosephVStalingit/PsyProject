@@ -1,0 +1,52 @@
+! ----------------------------------------------------------
+!  circuit.definitions   --   Elmer native circuit file
+!  CLOSED loop (default, Lenz drag):
+!      node 1 -- [StrandedCoil] -- node 2 -- [Resistor 10 Ohm] -- node 0 (GND)
+! ----------------------------------------------------------
+
+! Circuit.net 1
+
+CircuitDefinitions
+
+  Component 1
+    Name              = "StrandedCoil"
+    Coil Type         = Stranded
+    Body Id           = 1
+    Nturns            = 50
+    Wire Area         = 5.0e-07
+    Wire Conductivity = 5.96e+07
+    Initial Current   = 0.0
+  End Component
+
+  Component 2
+    Name              = "Resistor"
+    R                 = 10.0
+  End Component
+
+  Component 3
+    Name              = "Ground"
+    Ground            = 0
+  End Component
+
+End CircuitDefinitions
+
+! ----------------------------------------------------------
+!  Topology - declare each component's terminal nodes
+! ----------------------------------------------------------
+Component 1
+  Name      = "StrandedCoil"
+  Node 1    = 1
+  Node 2    = 2
+End Component
+
+Component 2
+  Name      = "Resistor"
+  Node 1    = 2
+  Node 2    = 0
+End Component
+
+Component 3
+  Name      = "Ground"
+  Node      = 0
+End Component
+

@@ -1,0 +1,4 @@
+# Same as requirements.txt but bundled as a single command.
+#
+# pip install -r requirements-dev.txt
+-r requirements.txt

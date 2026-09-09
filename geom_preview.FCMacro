@@ -1,0 +1,86 @@
+# -*- coding: utf-8 -*-
+"""
+geom_preview.FCMacro  -  Double-clickable FreeCAD macro
+========================================================
+FreeCAD 1.1.x can run .FCMacro files directly via File -> Open
+(this file's name has the FCMacro extension so the dialog filters it).
+
+What it does
+------------
+Builds the falling-magnet geometry entirely inside FreeCAD Part workbench.
+NO EXTERNAL FILES NEEDED.  The macro also writes geom_preview.step so you
+can re-open it later with File -> Open.
+
+Dimensions match solenoid3d.geo exactly (units: mm):
+    AirDomain : R 80, z [-50, +120]
+    CoilBlock : R_out 25, R_in 20, z [-20, +20]
+    Magnet    : R 15,        z [+60, +90]
+"""
+
+import os
+import FreeCAD
+import FreeCADGui
+import Part
+
+# ---- view setup -------------------------------------------------------
+doc = FreeCAD.newDocument("FallingMagnet_Geom")
+FreeCADGui.activeDocument().activeView().viewIsometric()
+
+# =======================================================================
+#  Air domain  -  outer cylinder, transparent
+# =======================================================================
+air = doc.addObject("Part::Cylinder", "AirDomain")
+air.Radius = 80.0
+air.Height = 170.0
+air.Placement = FreeCAD.Placement(
+    FreeCAD.Vector(0, 0, -50),
+    FreeCAD.Rotation())
+
+# =======================================================================
+#  Stranded coil block  -  hollow cylinder via Boolean cut
+# =======================================================================
+# Use Part.makeCylinder signature  (radius, height, position, axis, angle)
+coil_outer = Part.makeCylinder(25.0, 40.0,
+                               FreeCAD.Vector(0, 0, -20),
+                               FreeCAD.Vector(0, 0, 1), 360.0)
+coil_inner = Part.makeCylinder(20.0, 40.0,
+                               FreeCAD.Vector(0, 0, -20),
+                               FreeCAD.Vector(0, 0, 1), 360.0)
+coil_shape = coil_outer.cut(coil_inner)
+coil = doc.addObject("Part::Feature", "CoilBlock")
+coil.Shape = coil_shape
+
+# =======================================================================
+#  Permanent magnet
+# =======================================================================
+mag = doc.addObject("Part::Cylinder", "Magnet")
+mag.Radius = 15.0
+mag.Height = 30.0
+mag.Placement = FreeCAD.Placement(
+    FreeCAD.Vector(0, 0, 60),
+    FreeCAD.Rotation())
+
+doc.recompute()
+
+# =======================================================================
+#  Colours / transparency
+# =======================================================================
+def _set(obj, rgb, trans=0):
+    obj.ViewObject.ShapeColor   = rgb
+    obj.ViewObject.Transparency = trans
+
+_set(air,  (0.85, 0.92, 1.00), trans=88)        # pale blue ghost
+_set(coil, (1.00, 0.55, 0.20), trans=55)        # copper orange
+_set(mag,  (0.90, 0.10, 0.10), trans=0)         # solid red
+
+doc.recompute()
+FreeCADGui.SendMsgToActiveView("ViewFit")
+
+# =======================================================================
+#  Persist as STEP
+# =======================================================================
+STEP_OUT = r"c:\Users\JosephVStalin\Desktop\PysProject\geom_preview.step"
+Part.export(doc.Objects, STEP_OUT)
+FreeCAD.Console.PrintMessage(
+    "[ok] geom_preview loaded\n"
+    "[ok] saved {}\n".format(STEP_OUT))

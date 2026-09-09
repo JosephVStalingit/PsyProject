@@ -1,0 +1,42 @@
+! ----------------------------------------------------------
+!  circuit_open.definitions   --   Elmer native circuit file
+!  OPEN-LOOP reference case (no Lenz damping):
+!  Coil is connected only to ground -> no closed path ->
+!  induced EMF appears but current i ~ 0 -> F = i x B = 0.
+! ----------------------------------------------------------
+
+! Circuit.net 1
+
+CircuitDefinitions
+
+  Component 1
+    Name              = "StrandedCoil"
+    Coil Type         = Stranded
+    Body Id           = 1
+    Nturns            = 50
+    Wire Area         = 5.0e-07
+    Wire Conductivity = 5.96e+07
+    Initial Current   = 0.0
+  End Component
+
+  Component 2
+    Name              = "Ground"
+    Ground            = 0
+  End Component
+
+End CircuitDefinitions
+
+! ----------------------------------------------------------
+!  Open-loop topology: only the ground terminal is wired.
+! ----------------------------------------------------------
+Component 1
+  Name      = "StrandedCoil"
+  Node 1    = 1
+  Node 2    = 0
+End Component
+
+Component 2
+  Name      = "Ground"
+  Node      = 0
+End Component
+
