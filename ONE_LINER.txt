@@ -1,4 +1,0 @@
-# 一键在 FreeCAD 1.1.3 里显示几何
-# 操作：在 FreeCAD 底部 Report View 控件上单击，粘贴下面这一行，按回车
-
-exec(open(r"c:\Users\JosephVStalin\Desktop\PysProject\geom_preview.py", encoding="utf-8").read())

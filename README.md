@@ -60,25 +60,83 @@ m * z_ddot = m*g - k*(z - z_eq) - c*v - F_lenz(t)
 
 ## 2. PIP 安装
 
-`requirements.txt` 一行装齐所有 Python 依赖：
-
 ```powershell
 pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
 ```
 
-| 包 | 用途 | 为什么装 |
-|---|---|---|
-| `gmsh>=4.13,<5.0` | 三维网格生成 | 替代被网络屏蔽的 gmsh.info 二进制 |
-| `meshio>=5.3,<6.0` | .vtu / .msh 读写 | 链接 Elmer ↔ pyvista |
-| `pyvista>=0.43,<1.0` | headless 3D 渲染 | 不依赖 FreeCAD 即可出图 |
+完整 Python 包列表见 `requirements.txt`。
 
-> **为什么 pip 装 gmsh？** 官方 binary 下载 `https://gmsh.info/bin/Windows/...` 在中国网络下经常 0x80072efd 失败。pip 安装是预编译 wheel（约 60 MB），含 `gmsh.bat` + `gmsh-4.x.dll` + Python 模块，一步到位。
+**核心必需**（仅 `simulate.py` 用）：
+- `numpy>=2.0,<3.0`     — 数值计算
+- `matplotlib>=3.8`     — dashboard 渲染
 
-**多 Python 解释器共存**：项目使用 `C:\Users\JosephVStalin\AppData\Local\Programs\Python\Python311\python.exe`（3.11，pip 装过 gmsh）。若你机器上也是这个解释器，直接 `pip install`；否则手动指定：
+**可选**（用于其它工作流）：
+- `gmsh>=4.13,<5.0`      — gmsh Python API（替代被网络屏蔽的 gmsh.info 二进制，pip wheel 自带 `gmsh.bat` + DLL）
+- `meshio>=5.3,<6.0`     — .vtu / .msh I/O
+- `pyvista>=0.43,<1.0`   — headless 3D 渲染
+- `imageio>=2.30`        — MP4 / GIF 拼接
+### 2.1 使用 `installers/` 目录安装基础环境
+
+如果目标机器无法访问 PyPI（如内网、离线环境），可以把所有安装包放在项目根目录下的 `installers/` 子目录里离线安装：
+
+```
+PysProject/
+├── installers/                ← 离线安装包放这里
+│   ├── python-3.11.9-amd64.exe       (Windows Python 解释器安装包)
+|   ├── ElmerFEM-gui-nompi-Windows-AMD64.exe       (求解器)
+├── simulate.py
+├── run.ps1
+├── config.json
+├── README.md
+├── requirements.txt
+└── geom_preview.FCMacro
+```
+
+**步骤 1 — 安装 Python（如果未装）**
 
 ```powershell
-& "C:\Users\JosephVStalin\AppData\Local\Programs\Python\Python311\python.exe" -m pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
+# Windows
+.\installers\python-3.11.9-amd64.exe /quiet InstallAllUsers=1 PrependPath=1
+
+# Linux / macOS
+sudo bash installers/python-3.11.9.run
 ```
+
+**步骤 2 — 用本地 wheel 装所有依赖**
+
+```powershell
+# 先装 pip 引导（如系统 Python 自带可跳）
+python -m pip install --no-index --find-links=installers pip
+
+# 一行装齐所有依赖（按 requirements.txt 顺序）
+python -m pip install --no-index --find-links=installers -r requirements.txt
+```
+
+**步骤 3 — 验证**
+
+```powershell
+python -c "import numpy, matplotlib, gmsh, meshio, pyvista; print('all OK')"
+```
+
+**离线机器生成 installers/ 目录（一次性）**：
+
+在能上网的机器上：
+
+```powershell
+# 把所有 wheel 一次性下载到 installers/
+python -m pip download -r requirements.txt -d installers/
+
+# 或者更稳（确保 ABI 匹配）：
+python -m pip download `
+    numpy==2.0.1 matplotlib==3.8.4 gmsh==4.13.1 meshio==5.3.5 `
+    pyvista==0.43.5 imageio==2.34.0 `
+    --only-binary=:all: --python-version 3.11 `
+    --platform win_amd64 -d installers/
+```
+
+然后把整个 `installers/` 目录拷到目标机器即可。
+
+> **注意**：`gmsh`、`pyvista` 体积大（合计 ~150 MB），建议用 U 盘 / 局域网拷贝而非网盘下载。
 
 ---
 
@@ -86,14 +144,12 @@ pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
 
 | 文件 | 大小 | 说明 |
 |---|---|---|
-| `solenoid3d.py` | 8 KB | 几何生成（gmsh Python API），3 config |
-| `case_templates.py` | 9 KB | SIF 模板生成器（参数化） |
-| `oscilloscope.py` | 11 KB | 即时渲染 + 半解析 1D ODE + 6 面板示波器 |
+| `simulate.py` | 15 KB | **核心** — 半解析 1D ODE + 解析 B 场 + 楞次 EMF/I |
+| `run.ps1` | 6 KB | **统一入口** — 调 `simulate.py`，5 个 target |
+| `config.json` | 4 KB | **驱动配置** — 多 run JSON 块，每块一条曲线 |
+| `README.md` | 15 KB | 主文档（含方法 + 参数说明 + 许可证） |
+| `requirements.txt` | 0.5 KB | pip 依赖列表 |
 | `geom_preview.FCMacro` | 3 KB | FreeCAD 几何预览宏（双击即用） |
-| `visualize_freecad_macro.py` | 7 KB | FreeCAD 时序动画宏（需 .vtu） |
-| `run_tests.ps1` | 3 KB | 端到端测试（4 步骤） |
-| `one_click.ps1` | 12 KB | 完整流水线（gmsh → Elmer → FreeCAD） |
-| `clean.ps1` | 2 KB | 清理所有中间产物 |
 
 ---
 
@@ -506,8 +562,10 @@ m·z̈ = m·g - k·(z - z_eq) - c·v - F_lenz
 ### 12.2 运行
 
 ```powershell
-.un.ps1               # 跑所有 runs（含新加的）
-.un.ps1 my_experiment # 只跑新加的那条
+.
+un.ps1               # 跑所有 runs（含新加的）
+.
+un.ps1 my_experiment # 只跑新加的那条
 ```
 
 ### 12.3 产物
@@ -528,3 +586,32 @@ m·z̈ = m·g - k·(z - z_eq) - c·v - F_lenz
 | **月球** | `simulation.g_mps2 = 1.62` |
 | **大质量惯性** | `magnet.mass_kg` ↑ (e.g. 2.0) |
 | **强磁场** | `magnet.M_z_Am` ↑ (e.g. -1.5e6) |
+
+
+## 14. 许可证
+
+MIT License.  详见以下全文：
+
+```
+MIT License
+
+Copyright (c) 2026
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
