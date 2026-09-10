@@ -370,3 +370,161 @@ python solenoid3d.py --config stranded-coil
 | 几何预览 | `geom_preview.FCMacro` | < 5 秒 | FreeCAD |
 | 物理结果 | `oscilloscope.py` | < 2 秒 | Python + matplotlib |
 | 时序动画 | `visualize_freecad_macro.py` | 慢（每帧 ~1 s） | FreeCAD + meshio + ElmerSolver |
+
+
+## 11. config.json 参数说明
+
+`config.json` 是整个仿真的唯一驱动文件——`simulate.py` 读取它，`run.ps1` 调度它。
+**每个 JSON 块 = 一条曲线**；曲线条数 = `runs` 字典的 key 数量，无上限。
+
+```json
+{
+  "runs": {
+    "<run_name>": {
+      "comment":    "自由文本描述",
+      "magnet":     { ... },
+      "coil":       { ... },
+      "spring":     { ... },
+      "air_drag":   { ... },
+      "simulation": { ... }
+    },
+    ...
+  }
+}
+```
+
+### 11.1 顶层字段
+
+| 字段 | 类型 | 含义 |
+|---|---|---|
+| `runs` | dict | 一个 key 对应一条曲线，**直接增加 key 即增加曲线** |
+
+`<run_name>`（即 runs 的 key）会成为**图例标签**、**JSON 子键**、**summary 行首列**。建议用 snake_case（如 `coil_100t_dense`、`no_coil_vacuum`）。
+
+---
+
+### 11.2 `magnet`（永磁体）
+
+| 参数 | 类型 | 单位 | 含义 |
+|---|---|---|---|
+| `material` | string | - | 材料标签（如 `"NdFeB"`），仅用于注释/可读性 |
+| `radius_m` | float | m | 圆柱半径 |
+| `height_m` | float | m | 圆柱高度 |
+| `mass_kg` | float | kg | 磁体质量；越大惯性越大、振幅越小、ω₀ 越低 |
+| `M_z_Am` | float | A/m | 沿 z 轴的磁化强度（M_z = -1.2e6 即 N52 NdFeB 表面 ~1.2 T）|
+
+物理：磁体在轴上产生的磁场（解析解）：
+```
+B_z(z') = (μ₀/2) · M_z · [ (z'+H)/√(R²+(z'+H)²) - (z'-H)/√(R²+(z'-H)²) ]
+其中 z' = z_world - magnet_centre，H = height_m/2
+```
+
+---
+
+### 11.3 `coil`（线圈，等效为缠绕区域）
+
+| 参数 | 类型 | 单位 | 含义 |
+|---|---|---|---|
+| `enabled` | bool | - | `false` 时整个线圈块当作空气，无 Lenz 力 |
+| `turns` | int | - | 匝数 N；EMF = N·dΦ/dt，匝数越多感应电动势越大 |
+| `wire_area_m2` | float | m² | 导线截面积；用于估算铜导线内 E 场（仅可视化）|
+| `wire_cond_Sm` | float | S/m | 导线电导率（铜 5.96×10⁷ S/m，铝 3.5×10⁷）|
+| `load_R_ohm` | float | Ω | 回路电阻；I = EMF / R；越大 Lenz 电流越小（开路 1e9 ≈ 无电流）|
+
+物理（楞次定律）：
+```
+Φ(t) = N · ∫[coil_block] B_z(r=0,z) dA
+EMF(t) = -dΦ/dt
+I(t)   = EMF / R_load
+```
+
+---
+
+### 11.4 `spring`（弹簧，把磁体连到固定点）
+
+| 参数 | 类型 | 单位 | 含义 |
+|---|---|---|---|
+| `k_Npm` | float | N/m | 弹簧劲度系数；ω₀ = √(k/m)，k 越大频率越高 |
+| `natural_z_m` | float | m | 弹簧自然长度时磁体中心位置（平衡点 z_eq）|
+| `release_z_m` | float | m | 初始释放位置；`release_z_m == natural_z_m` 意味着从平衡位置无初速释放 |
+
+物理：弹簧力 F_s = -k·(z - z_eq)，磁体相对平衡位置的位移 ODE：
+```
+m·z̈ = m·g - k·(z - z_eq) - c·v - F_lenz
+```
+注意 ODE 坐标 z = z_world - natural_z_m，所以 `z(0) = release_z_m - natural_z_m`。
+
+---
+
+### 11.5 `air_drag`（空气阻力 / 粘滞阻尼）
+
+| 参数 | 类型 | 单位 | 含义 |
+|---|---|---|---|
+| `enabled` | bool | - | `false` 表示真空（理想弹簧振子，永不衰减）|
+| `c_Ns_per_m` | float | N·s/m | 粘滞阻尼系数；F_drag = -c·v；越大振铃衰减越快 |
+
+物理：阻尼比 ζ = c / (2·m·ω₀)；衰减时间 τ = 1/(ζ·ω₀) = 2·m/c。
+- ζ < 1：欠阻尼（振荡衰减）
+- ζ = 1：临界阻尼
+- ζ > 1：过阻尼（不振荡直接回到平衡）
+
+---
+
+### 11.6 `simulation`（数值积分设置）
+
+| 参数 | 类型 | 单位 | 含义 |
+|---|---|---|---|
+| `dt_s` | float | s | 积分时间步；建议 ≤ 1e-3，否则高频振荡被压制 |
+| `t_end_s` | float | s | 仿真总时长 |
+| `g_mps2` | float | m/s² | 重力加速度（地球 9.81、月球 1.62、火星 3.71）|
+
+---
+
+## 12. 添加新曲线的步骤
+
+### 12.1 编辑 config.json
+
+打开 `config.json`，在 `runs` 下加一行（仿照已有块）：
+
+```json
+{
+  "runs": {
+    "my_experiment": {
+      "comment": "experiment: heavy magnet, no coil",
+      "magnet": {"material":"NdFeB","radius_m":0.015,"height_m":0.030,
+                 "mass_kg":1.0,"M_z_Am":-1.2e6},
+      "coil":   {"enabled":false,"turns":0,"wire_area_m2":0.0,
+                 "wire_cond_Sm":0.0,"load_R_ohm":1e9},
+      "spring": {"k_Npm":12.0,"natural_z_m":0.075,"release_z_m":0.075},
+      "air_drag": {"enabled":false,"c_Ns_per_m":0.05},
+      "simulation": {"dt_s":0.001,"t_end_s":3.0,"g_mps2":9.81}
+    }
+  }
+}
+```
+
+### 12.2 运行
+
+```powershell
+.un.ps1               # 跑所有 runs（含新加的）
+.un.ps1 my_experiment # 只跑新加的那条
+```
+
+### 12.3 产物
+
+`results/dashboard.png` 会**自动多一条曲线**（用 10 色循环着色），`summary.txt` 多一行，`data.json` 多一个 key。
+
+### 12.4 物理预期速查
+
+| 想看的现象 | 改什么 |
+|---|---|
+| **强 Lenz 阻尼** | `coil.turns` ↑ (e.g. 200) 或 `coil.load_R_ohm` ↓ (e.g. 1 Ω) |
+| **无 Lenz 阻尼**（纯弹簧） | `coil.enabled = false` + `air_drag.enabled = false` |
+| **快振铃** | `spring.k_Npm` ↑ (e.g. 50 N/m) |
+| **慢振铃** | `spring.k_Npm` ↓ (e.g. 4 N/m) |
+| **大振幅** | 释放位置远离平衡：`spring.release_z_m - spring.natural_z_m` 大 |
+| **强阻尼**（过阻尼） | `air_drag.c_Ns_per_m` 大 或 `spring.k_Npm` 小 |
+| **零重力** | `simulation.g_mps2 = 0`（磁体悬浮） |
+| **月球** | `simulation.g_mps2 = 1.62` |
+| **大质量惯性** | `magnet.mass_kg` ↑ (e.g. 2.0) |
+| **强磁场** | `magnet.M_z_Am` ↑ (e.g. -1.5e6) |

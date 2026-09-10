@@ -1,0 +1,159 @@
+{
+  "runs": {
+    "coil_50t": {
+      "comment": "50 turn coil, no air drag",
+      "magnet": {
+        "material": "NdFeB",
+        "radius_m": 0.015,
+        "height_m": 0.03,
+        "mass_kg": 0.5,
+        "M_z_Am": -1200000.0
+      },
+      "coil": {
+        "enabled": true,
+        "turns": 50,
+        "wire_area_m2": 5e-07,
+        "wire_cond_Sm": 59600000.0,
+        "load_R_ohm": 10.0
+      },
+      "spring": {
+        "k_Npm": 12.0,
+        "natural_z_m": 0.075,
+        "release_z_m": 0.075
+      },
+      "air_drag": {
+        "enabled": false,
+        "c_Ns_per_m": 0.05
+      },
+      "simulation": {
+        "dt_s": 0.001,
+        "t_end_s": 3.0,
+        "g_mps2": 9.81
+      }
+    },
+    "no_coil_vacuum": {
+      "comment": "no coil, vacuum, spring only",
+      "magnet": {
+        "material": "NdFeB",
+        "radius_m": 0.015,
+        "height_m": 0.03,
+        "mass_kg": 0.5,
+        "M_z_Am": -1200000.0
+      },
+      "coil": {
+        "enabled": false,
+        "turns": 0,
+        "wire_area_m2": 0.0,
+        "wire_cond_Sm": 0.0,
+        "load_R_ohm": 1000000000.0
+      },
+      "spring": {
+        "k_Npm": 12.0,
+        "natural_z_m": 0.075,
+        "release_z_m": 0.075
+      },
+      "air_drag": {
+        "enabled": false,
+        "c_Ns_per_m": 0.0
+      },
+      "simulation": {
+        "dt_s": 0.001,
+        "t_end_s": 3.0,
+        "g_mps2": 9.81
+      }
+    },
+    "coil_100t_dense": {
+      "comment": "100-turn dense coil, no air drag, 10 ohm",
+      "magnet": {
+        "material": "NdFeB",
+        "radius_m": 0.015,
+        "height_m": 0.03,
+        "mass_kg": 0.5,
+        "M_z_Am": -1200000.0
+      },
+      "coil": {
+        "enabled": true,
+        "turns": 100,
+        "wire_area_m2": 5e-07,
+        "wire_cond_Sm": 59600000.0,
+        "load_R_ohm": 10.0
+      },
+      "spring": {
+        "k_Npm": 12.0,
+        "natural_z_m": 0.075,
+        "release_z_m": 0.075
+      },
+      "air_drag": {
+        "enabled": false,
+        "c_Ns_per_m": 0.05
+      },
+      "simulation": {
+        "dt_s": 0.001,
+        "t_end_s": 3.0,
+        "g_mps2": 9.81
+      }
+    },
+    "soft_spring": {
+      "comment": "50t coil, weak spring (k=4)",
+      "magnet": {
+        "material": "NdFeB",
+        "radius_m": 0.015,
+        "height_m": 0.03,
+        "mass_kg": 0.5,
+        "M_z_Am": -1200000.0
+      },
+      "coil": {
+        "enabled": true,
+        "turns": 50,
+        "wire_area_m2": 5e-07,
+        "wire_cond_Sm": 59600000.0,
+        "load_R_ohm": 10.0
+      },
+      "spring": {
+        "k_Npm": 4.0,
+        "natural_z_m": 0.075,
+        "release_z_m": 0.075
+      },
+      "air_drag": {
+        "enabled": false,
+        "c_Ns_per_m": 0.05
+      },
+      "simulation": {
+        "dt_s": 0.001,
+        "t_end_s": 3.0,
+        "g_mps2": 9.81
+      }
+    },
+    "with_air": {
+      "comment": "50t coil + air drag (c=0.05)",
+      "magnet": {
+        "material": "NdFeB",
+        "radius_m": 0.015,
+        "height_m": 0.03,
+        "mass_kg": 0.5,
+        "M_z_Am": -1200000.0
+      },
+      "coil": {
+        "enabled": true,
+        "turns": 50,
+        "wire_area_m2": 5e-07,
+        "wire_cond_Sm": 59600000.0,
+        "load_R_ohm": 10.0
+      },
+      "spring": {
+        "k_Npm": 12.0,
+        "natural_z_m": 0.075,
+        "release_z_m": 0.075
+      },
+      "air_drag": {
+        "enabled": true,
+        "c_Ns_per_m": 0.05
+      },
+      "simulation": {
+        "dt_s": 0.001,
+        "t_end_s": 3.0,
+        "g_mps2": 9.81
+      }
+    }
+  }
+}
